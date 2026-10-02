@@ -1,27 +1,11 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:just_audio/just_audio.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-
-  await SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.immersiveSticky,
-  );
-
-  runApp(const VirtualDJProApp());
+void main() {
+  runApp(const VirtualDjProApp());
 }
 
-class VirtualDJProApp extends StatelessWidget {
-  const VirtualDJProApp({super.key});
+class VirtualDjProApp extends StatelessWidget {
+  const VirtualDjProApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -29,1166 +13,764 @@ class VirtualDJProApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Virtual DJ Pro',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF050912),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.cyanAccent,
-          brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF080A0E),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF5FE3FF),
+          secondary: Color(0xFF5FE3FF),
         ),
       ),
-      home: const DJConsole(),
+      home: const HomeDJMixer(),
     );
   }
 }
 
-class DJConsole extends StatefulWidget {
-  const DJConsole({super.key});
+class HomeDJMixer extends StatefulWidget {
+  const HomeDJMixer({super.key});
 
   @override
-  State<DJConsole> createState() => _DJConsoleState();
+  State<HomeDJMixer> createState() => _HomeDJMixerState();
 }
 
-class _DJConsoleState extends State<DJConsole> {
-  final AudioPlayer playerA = AudioPlayer();
-  final AudioPlayer playerB = AudioPlayer();
-
-  final Map<int, Duration> cuesA = {};
-  final Map<int, Duration> cuesB = {};
-
-  bool setModeA = false;
-  bool setModeB = false;
-
-  bool neuralOn = true;
-  bool recording = false;
-
+class _HomeDJMixerState extends State<HomeDJMixer> {
   double crossfader = 0.5;
-  double vocals = 1;
-  double drums = 1;
-  double instrumental = 1;
-  double bass = 1;
+  double masterVolume = 0.85;
 
-  int activeSampler = -1;
+  bool neuralMixEnabled = true;
+  bool syncA = false;
+  bool syncB = false;
 
-  StreamSubscription<Duration>? positionA;
-  StreamSubscription<Duration>? positionB;
+  final Map<String, double> stems = {
+    'VOCALS': 1.0,
+    'DRUMS': 1.0,
+    'BASS': 1.0,
+    'INSTRUMENTAL': 1.0,
+  };
 
-  Duration currentA = Duration.zero;
-  Duration currentB = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-
-    positionA = playerA.positionStream.listen((p) {
-      if (mounted) setState(() => currentA = p);
-    });
-
-    positionB = playerB.positionStream.listen((p) {
-      if (mounted) setState(() => currentB = p);
-    });
-  }
-
-  @override
-  void dispose() {
-    positionA?.cancel();
-    positionB?.cancel();
-    playerA.dispose();
-    playerB.dispose();
-    super.dispose();
-  }
-
-  Future<void> loadTrack(AudioPlayer player) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-
-    if (result == null || result.files.single.path == null) return;
-
-    final path = result.files.single.path!;
-
-    await player.setFilePath(path);
-
-    if (mounted) setState(() {});
-  }
-
-  Future<void> togglePlay(AudioPlayer player) async {
-    if (player.playing) {
-      await player.pause();
-    } else {
-      await player.play();
-    }
-
-    if (mounted) setState(() {});
-  }
-
-  Future<void> stopDeck(AudioPlayer player) async {
-    await player.stop();
-    await player.seek(Duration.zero);
-
-    if (mounted) setState(() {});
-  }
-
-  void hotCue(
-    AudioPlayer player,
-    Map<int, Duration> cues,
-    int number,
-    bool setMode,
-  ) {
-    final position = player.position;
-
-    if (setMode) {
-      cues[number] = position;
-      setState(() {});
-      return;
-    }
-
-    final cue = cues[number];
-
-    if (cue != null) {
-      player.seek(cue);
-      player.play();
-      setState(() {});
-    }
-  }
-
-  void deleteCue(Map<int, Duration> cues, int number) {
-    cues.remove(number);
-    setState(() {});
-  }
-
-  void sampler(int index) {
+  void updateStem(String name, double value) {
     setState(() {
-      activeSampler = index;
+      stems[name] = value;
     });
-
-    Timer(const Duration(milliseconds: 180), () {
-      if (mounted) {
-        setState(() => activeSampler = -1);
-      }
-    });
-  }
-
-  String formatTime(Duration d) {
-    final m = d.inMinutes.toString().padLeft(2, '0');
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF10141A),
+        elevation: 0,
+        title: const Row(
+          children: [
+            Text(
+              'VIRTUAL DJ PRO',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
+            SizedBox(width: 14),
+            Text(
+              'NEURAL MIX',
+              style: TextStyle(
+                color: Color(0xFF5FE3FF),
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.library_music),
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.fiber_manual_record),
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.settings),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            return Column(
-              children: [
-                _header(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        flex: 7,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _deck(
-                                deck: 'A',
-                                color: Colors.cyanAccent,
-                                player: playerA,
-                                cues: cuesA,
-                                setMode: setModeA,
-                                current: currentA,
-                                onSetMode: () {
-                                  setState(() => setModeA = !setModeA);
-                                },
-                              ),
-                            ),
-                            SizedBox(
-                              width: constraints.maxWidth * .16,
-                              child: _mixer(),
-                            ),
-                            Expanded(
-                              child: _deck(
-                                deck: 'B',
-                                color: Colors.redAccent,
-                                player: playerB,
-                                cues: cuesB,
-                                setMode: setModeB,
-                                current: currentB,
-                                onSetMode: () {
-                                  setState(() => setModeB = !setModeB);
-                                },
-                              ),
-                            ),
-                          ],
+            final isWide = constraints.maxWidth >= 900;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                children: [
+                  if (isWide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: DeckWidget(
+                            deckName: 'DECK A',
+                            trackName: 'TRACK A',
+                            bpm: 128.0,
+                            sync: syncA,
+                            onSyncChanged: (value) {
+                              setState(() => syncA = value);
+                            },
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        height: constraints.maxHeight * .30,
-                        child: _bottomPanel(),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 360,
+                          child: MixerWidget(
+                            crossfader: crossfader,
+                            masterVolume: masterVolume,
+                            onCrossfaderChanged: (value) {
+                              setState(() => crossfader = value);
+                            },
+                            onMasterChanged: (value) {
+                              setState(() => masterVolume = value);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DeckWidget(
+                            deckName: 'DECK B',
+                            trackName: 'TRACK B',
+                            bpm: 128.0,
+                            sync: syncB,
+                            onSyncChanged: (value) {
+                              setState(() => syncB = value);
+                            },
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Column(
+                      children: [
+                        DeckWidget(
+                          deckName: 'DECK A',
+                          trackName: 'TRACK A',
+                          bpm: 128.0,
+                          sync: syncA,
+                          onSyncChanged: (value) {
+                            setState(() => syncA = value);
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        MixerWidget(
+                          crossfader: crossfader,
+                          masterVolume: masterVolume,
+                          onCrossfaderChanged: (value) {
+                            setState(() => crossfader = value);
+                          },
+                          onMasterChanged: (value) {
+                            setState(() => masterVolume = value);
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        DeckWidget(
+                          deckName: 'DECK B',
+                          trackName: 'TRACK B',
+                          bpm: 128.0,
+                          sync: syncB,
+                          onSyncChanged: (value) {
+                            setState(() => syncB = value);
+                          },
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: 14),
+
+                  NeuralMixPanel(
+                    enabled: neuralMixEnabled,
+                    stems: stems,
+                    onEnabledChanged: (value) {
+                      setState(() => neuralMixEnabled = value);
+                    },
+                    onStemChanged: updateStem,
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: 14),
+
+                  const BottomTools(),
+                ],
+              ),
             );
           },
         ),
       ),
     );
   }
+}class DeckWidget extends StatefulWidget {
+  final String deckName;
+  final String trackName;
+  final double bpm;
+  final bool sync;
+  final ValueChanged<bool> onSyncChanged;
 
-  Widget _header() {
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-        color: const Color(0xFF090F1C),
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.cyanAccent.withOpacity(.45),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 14),
-          const Icon(Icons.menu, color: Colors.white, size: 25),
-          const SizedBox(width: 14),
-          const Text(
-            'VIRTUAL DJ',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
-          ),
-          const Text(
-            ' PRO',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Colors.redAccent,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 5,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: Colors.cyanAccent,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.cyanAccent.withOpacity(.3),
-                  blurRadius: 12,
-                ),
-              ],
-            ),
-            child: const Text(
-              '🧠 NEURAL MIX',
-              style: TextStyle(
-                color: Colors.cyanAccent,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
-          ),
-          const Spacer(),
-          const Icon(Icons.library_music,
-              color: Colors.cyanAccent),
-          const SizedBox(width: 18),
-          const Icon(Icons.search, color: Colors.white),
-          const SizedBox(width: 18),
-          const Icon(Icons.settings, color: Colors.white),
-          const SizedBox(width: 14),
-        ],
-      ),
-    );
-  }
+  const DeckWidget({
+    super.key,
+    required this.deckName,
+    required this.trackName,
+    required this.bpm,
+    required this.sync,
+    required this.onSyncChanged,
+  });
 
-  Widget _deck({
-    required String deck,
-    required Color color,
-    required AudioPlayer player,
-    required Map<int, Duration> cues,
-    required bool setMode,
-    required Duration current,
-    required VoidCallback onSetMode,
-  }) {
-    return Container(
-      margin: const EdgeInsets.all(4),
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF091221),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: color.withOpacity(.65),
-        ),
-      ),
+  @override
+  State<DeckWidget> createState() => _DeckWidgetState();
+}
+
+class _DeckWidgetState extends State<DeckWidget> {
+  bool playing = false;
+  bool cue = false;
+  double pitch = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return DJCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 35,
-                height: 35,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(.12),
-                  border: Border.all(color: color),
-                  borderRadius: BorderRadius.circular(7),
+              Text(
+                widget.deckName,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
                 ),
-                child: Text(
-                  deck,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 7),
-              const Expanded(
-                child: Text(
-                  'DJ Kreyòl Mix',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const Text(
-                '128 BPM',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 3),
-
-          Container(
-            height: 38,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: CustomPaint(
-              painter: WavePainter(
-                color: color,
-                progress: current.inSeconds % 32 / 32,
-              ),
-              child: Center(
-                child: Text(
-                  formatTime(current),
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Colors.white70,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Row(
-            children: [
-              const Text(
-                'HOT CUE',
-                style: TextStyle(fontSize: 10),
               ),
               const Spacer(),
-              ...List.generate(4, (i) {
-                final n = i + 1;
-                final exists = cues.containsKey(n);
-
-                return GestureDetector(
-                  onTap: () => hotCue(
-                    player,
-                    cues,
-                    n,
-                    setMode,
-                  ),
-                  child: Container(
-                    width: 35,
-                    height: 25,
-                    margin: const EdgeInsets.only(left: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: exists
-                          ? _cueColor(n)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(
-                        color: _cueColor(n),
-                      ),
-                      boxShadow: exists
-                          ? [
-                              BoxShadow(
-                                color: _cueColor(n)
-                                    .withOpacity(.4),
-                                blurRadius: 7,
-                              )
-                            ]
-                          : [],
-                    ),
-                    child: Text(
-                      '$n',
-                      style: TextStyle(
-                        color: exists
-                            ? Colors.black
-                            : _cueColor(n),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              const SizedBox(width: 5),
-              _smallButton(
-                setMode ? 'SET' : 'SET',
-                setMode ? Colors.greenAccent : Colors.white70,
-                onSetMode,
-              ),
-              _smallButton(
-                'DEL',
-                Colors.redAccent,
-                () {
-                  if (cues.isNotEmpty) {
-                    deleteCue(
-                      cues,
-                      cues.keys.last,
-                    );
-                  }
-                },
+              Text(
+                widget.trackName,
+                style: const TextStyle(color: Colors.white60),
               ),
             ],
           ),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
+
+          const WaveformPlaceholder(),
+
+          const SizedBox(height: 10),
 
           Row(
             children: [
-              _tiny('LOOP'),
-              _tiny('IN'),
-              _tiny('OUT'),
-              _tiny('1/2'),
-              _tiny('1'),
-              _tiny('2'),
-              _tiny('4'),
-              _tiny('8'),
-              _tiny('16'),
-            ],
-          ),
-
-          Expanded(
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 40,
-                  child: Column(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        '+50%',
-                        style: TextStyle(fontSize: 9),
-                      ),
-                      Expanded(
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: Slider(
-                            value: .5,
-                            onChanged: (_) {},
-                            activeColor: color,
-                          ),
-                        ),
-                      ),
-                      const Text(
-                        '-50%',
-                        style: TextStyle(fontSize: 9),
-                      ),
-                    ],
-                  ),
-                ),
-
-                Expanded(
-                  child: Center(
-                    child: _jogWheel(color),
-                  ),
-                ),
-
-                SizedBox(
-                  width: 55,
-                  child: Column(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: [
-                      _roundButton(
-                        'SLIP',
-                        Colors.white54,
-                      ),
-                      const SizedBox(height: 8),
-                      _roundButton(
-                        'VINYL',
-                        color,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          Row(
-            children: [
-              _action(
-                'LOAD',
-                Colors.cyanAccent,
-                () => loadTrack(player),
-              ),
-              _action(
-                'CUE',
-                Colors.orangeAccent,
-                () {
-                  player.seek(Duration.zero);
-                },
-              ),
-              _action(
-                player.playing ? 'PAUSE' : 'PLAY',
-                Colors.greenAccent,
-                () => togglePlay(player),
-              ),
-              _action(
-                'STOP',
-                Colors.redAccent,
-                () => stopDeck(player),
-              ),
-              _action(
-                'SYNC',
-                color,
-                () {},
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _cueColor(int n) {
-    switch (n) {
-      case 1:
-        return Colors.greenAccent;
-      case 2:
-        return Colors.redAccent;
-      case 3:
-        return Colors.orangeAccent;
-      default:
-        return Colors.purpleAccent;
-    }
-  }
-
-  Widget _mixer() {
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        vertical: 4,
-      ),
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF080D17),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Colors.white24,
-        ),
-      ),
-      child: Column(
-        children: [
-          const Text(
-            'MIXER',
-            style: TextStyle(
-              color: Colors.cyanAccent,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: _channel('A', Colors.cyanAccent),
-                ),
-                Container(
-                  width: 32,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 3,
-                  ),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: _vuMeter(),
-                      ),
-                      const Icon(
-                        Icons.headphones,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: _channel('B', Colors.redAccent),
-                ),
-              ],
-            ),
-          ),
-          const Text(
-            'CROSSFADER',
-            style: TextStyle(
-              fontSize: 8,
-              color: Colors.white70,
-            ),
-          ),
-          Slider(
-            value: crossfader,
-            onChanged: (v) {
-              setState(() => crossfader = v);
-            },
-            activeColor: Colors.orangeAccent,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _channel(String name, Color color) {
-    return Column(
-      children: [
-        Text(
-          name,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        _knob(color),
-        const Text('GAIN', style: TextStyle(fontSize: 7)),
-        _knob(color),
-        const Text('HIGH', style: TextStyle(fontSize: 7)),
-        _knob(color),
-        const Text('MID', style: TextStyle(fontSize: 7)),
-        _knob(color),
-        const Text('BASS', style: TextStyle(fontSize: 7)),
-        Expanded(
-          child: RotatedBox(
-            quarterTurns: 3,
-            child: Slider(
-              value: .65,
-              onChanged: (_) {},
-              activeColor: color,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _vuMeter() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(
-        12,
-        (i) => Expanded(
-          child: Container(
-            margin: const EdgeInsets.symmetric(
-              vertical: 1,
-            ),
-            decoration: BoxDecoration(
-              color: i < 9
-                  ? Colors.greenAccent
-                  : Colors.redAccent,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _bottomPanel() {
-    return Row(
-      children: [
-        Expanded(
-          flex: 3,
-          child: _sampler(),
-        ),
-        Expanded(
-          flex: 4,
-          child: _neuralMix(),
-        ),
-        Expanded(
-          flex: 3,
-          child: _fxPanel(),
-        ),
-      ],
-    );
-  }
-
-  Widget _sampler() {
-    const names = [
-      'AIR',
-      'SIREN',
-      'CLAP',
-      'DRUM',
-      'VOCAL',
-      'SCRATCH',
-      'RISER',
-      'CUSTOM',
-    ];
-
-    return Container(
-      margin: const EdgeInsets.all(4),
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A1220),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.purpleAccent.withOpacity(.55),
-        ),
-      ),
-      child: Column(
-        children: [
-          const Text(
-            '🎹 SAMPLER',
-            style: TextStyle(
-              color: Colors.purpleAccent,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 8,
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 3,
-                crossAxisSpacing: 3,
-              ),
-              itemBuilder: (_, i) {
-                final active = activeSampler == i;
-
-                return GestureDetector(
-                  onTap: () => sampler(i),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: active
-                          ? Colors.purpleAccent
-                          : const Color(0xFF111C30),
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(
-                        color: Colors.purpleAccent,
-                      ),
-                    ),
-                    child: Text(
-                      names[i],
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: active
-                            ? Colors.black
-                            : Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _neuralMix() {
-    return Container(
-      margin: const EdgeInsets.all(4),
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF091322),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.cyanAccent.withOpacity(.55),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Text(
-                '🧠 NEURAL MIX',
-                style: TextStyle(
-                  color: Colors.cyanAccent,
+              Text(
+                '${widget.bpm.toStringAsFixed(1)} BPM',
+                style: const TextStyle(
+                  color: Color(0xFF5FE3FF),
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const Spacer(),
               Switch(
-                value: neuralOn,
-                activeColor: Colors.cyanAccent,
-                onChanged: (v) {
-                  setState(() => neuralOn = v);
+                value: widget.sync,
+                onChanged: widget.onSyncChanged,
+                activeThumbColor: const Color(0xFF5FE3FF),
+              ),
+              const Text('SYNC'),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              JogWheel(
+                playing: playing,
+                onTap: () {
+                  setState(() => playing = !playing);
                 },
+              ),
+
+              const SizedBox(width: 20),
+
+              Expanded(
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        DJButton(
+                          text: 'CUE',
+                          active: cue,
+                          onTap: () {
+                            setState(() => cue = !cue);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        DJButton(
+                          text: playing ? 'PAUSE' : 'PLAY',
+                          active: playing,
+                          onTap: () {
+                            setState(() => playing = !playing);
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Row(
+                      children: [
+                        DJButton(
+                          text: 'HOT CUE',
+                          onTap: () {},
+                        ),
+                        const SizedBox(width: 8),
+                        DJButton(
+                          text: 'LOOP',
+                          onTap: () {},
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    Row(
+                      children: [
+                        const Text(
+                          'PITCH',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white54,
+                          ),
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value: pitch,
+                            min: -1,
+                            max: 1,
+                            onChanged: (value) {
+                              setState(() => pitch = value);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          Expanded(
-            child: Row(
-              children: [
-                _stem('VOCALS', vocals, Colors.pinkAccent,
-                    (v) => vocals = v),
-                _stem('DRUMS', drums, Colors.orangeAccent,
-                    (v) => drums = v),
-                _stem(
-                    'INSTR',
-                    instrumental,
-                    Colors.greenAccent,
-                    (v) => instrumental = v),
-                _stem('BASS', bass, Colors.blueAccent,
-                    (v) => bass = v),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
+}class JogWheel extends StatelessWidget {
+  final bool playing;
+  final VoidCallback onTap;
 
-  Widget _stem(
-    String name,
-    double value,
-    Color color,
-    ValueChanged<double> change,
-  ) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            name,
-            style: TextStyle(
-              color: color,
-              fontSize: 8,
-              fontWeight: FontWeight.bold,
-            ),
+  const JogWheel({
+    super.key,
+    required this.playing,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 130,
+        height: 130,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFF07090C),
+          border: Border.all(
+            color: playing
+                ? const Color(0xFF5FE3FF)
+                : const Color(0xFF3A424D),
+            width: 5,
           ),
-          Expanded(
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: Slider(
-                value: value,
-                onChanged: (v) {
-                  setState(() => change(v));
-                },
-                activeColor: color,
+          boxShadow: playing
+              ? [
+                  const BoxShadow(
+                    color: Color(0x555FE3FF),
+                    blurRadius: 20,
+                  ),
+                ]
+              : [],
+        ),
+        child: Center(
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF181E26),
+              border: Border.all(
+                color: const Color(0xFF343C47),
               ),
             ),
+            child: const Icon(
+              Icons.album,
+              color: Color(0xFF5FE3FF),
+              size: 28,
+            ),
           ),
-          Text(
-            '${(value * 100).round()}%',
-            style: const TextStyle(fontSize: 8),
-          ),
-        ],
+        ),
       ),
     );
   }
+}class WaveformPlaceholder extends StatelessWidget {
+  const WaveformPlaceholder({super.key});
 
-  Widget _fxPanel() {
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(4),
-      padding: const EdgeInsets.all(5),
+      height: 100,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A1220),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF080A0E),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.orangeAccent.withOpacity(.5),
+          color: const Color(0xFF292F39),
         ),
       ),
+      child: CustomPaint(
+        painter: WaveformPainter(),
+      ),
+    );
+  }
+}
+
+class WaveformPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF5FE3FF)
+      ..strokeWidth = 2;
+
+    final center = size.height / 2;
+
+    for (int i = 0; i < 100; i++) {
+      final x = i * (size.width / 100);
+      final h = 8 + ((i * 17) % 45);
+
+      canvas.drawLine(
+        Offset(x, center - h),
+        Offset(x, center + h),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
+  }
+}class MixerWidget extends StatelessWidget {
+  final double crossfader;
+  final double masterVolume;
+  final ValueChanged<double> onCrossfaderChanged;
+  final ValueChanged<double> onMasterChanged;
+
+  const MixerWidget({
+    super.key,
+    required this.crossfader,
+    required this.masterVolume,
+    required this.onCrossfaderChanged,
+    required this.onMasterChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DJCard(
       child: Column(
         children: [
-          Row(
+          const Row(
             children: [
-              const Text(
-                '⚡ FX',
+              Text(
+                'MIXER',
                 style: TextStyle(
-                  color: Colors.orangeAccent,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Spacer(),
+              Text(
+                'A / B',
+                style: TextStyle(
+                  color: Color(0xFF5FE3FF),
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const Spacer(),
-              Icon(
-                recording
-                    ? Icons.stop_circle
-                    : Icons.fiber_manual_record,
-                color: recording
-                    ? Colors.red
-                    : Colors.redAccent,
-              ),
-              const SizedBox(width: 5),
-              GestureDetector(
-                onTap: () {
-                  setState(() => recording = !recording);
-                },
-                child: Text(
-                  recording ? 'STOP' : 'REC',
-                  style: TextStyle(
-                    color: recording
-                        ? Colors.red
-                        : Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: Row(
-              children: [
-                _fx('ECHO'),
-                _fx('REVERB'),
-                _fx('FILTER'),
-                _fx('FLANGER'),
-              ],
-            ),
-          ),
+
+          const SizedBox(height: 20),
+
           Row(
-            children: [
-              _bottomItem(Icons.library_music, 'LIBRARY'),
-              _bottomItem(Icons.queue_music, 'QUEUE'),
-              _bottomItem(Icons.settings, 'SETTINGS'),
+            children: const [
+              Expanded(child: ChannelStrip(label: 'CH A')),
+              SizedBox(width: 12),
+              Expanded(child: ChannelStrip(label: 'CH B')),
             ],
           ),
+
+          const SizedBox(height: 20),
+
+          const Text(
+            'CROSSFADER',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+            ),
+          ),
+
+          Slider(
+            value: crossfader,
+            onChanged: onCrossfaderChanged,
+          ),
+
+          const Text(
+            'MASTER',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+            ),
+          ),
+
+          Slider(
+            value: masterVolume,
+            onChanged: onMasterChanged,
+          ),
         ],
       ),
     );
   }
+}class ChannelStrip extends StatelessWidget {
+  final String label;
 
-  Widget _fx(String name) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {},
-        child: Container(
-          margin: const EdgeInsets.all(2),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFF101A2A),
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(
-              color: Colors.orangeAccent.withOpacity(.6),
-            ),
+  const ChannelStrip({
+    super.key,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF5FE3FF),
           ),
-          child: Text(
-            name,
-            style: const TextStyle(
-              fontSize: 8,
-              color: Colors.orangeAccent,
-              fontWeight: FontWeight.bold,
+        ),
+        const SizedBox(height: 10),
+        const Knob(label: 'HIGH'),
+        const Knob(label: 'MID'),
+        const Knob(label: 'LOW'),
+        const Knob(label: 'FILTER'),
+        const SizedBox(height: 10),
+        Container(
+          height: 90,
+          width: 20,
+          decoration: BoxDecoration(
+            color: const Color(0xFF080A0E),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const RotatedBox(
+            quarterTurns: 3,
+            child: Slider(
+              value: .75,
+              onChanged: null,
             ),
           ),
         ),
-      ),
+      ],
     );
   }
+}
 
-  Widget _bottomItem(IconData icon, String text) {
-    return Expanded(
+class Knob extends StatelessWidget {
+  final String label;
+
+  const Knob({
+    super.key,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: Colors.cyanAccent,
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF080A0E),
+              border: Border.all(
+                color: const Color(0xFF3A424D),
+                width: 3,
+              ),
+            ),
+            child: const Icon(
+              Icons.circle,
+              size: 8,
+              color: Color(0xFF5FE3FF),
+            ),
           ),
+          const SizedBox(height: 3),
           Text(
-            text,
-            style: const TextStyle(fontSize: 7),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _jogWheel(Color color) {
-    return Container(
-      width: 125,
-      height: 125,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const RadialGradient(
-          colors: [
-            Color(0xFF555B63),
-            Color(0xFF1B2028),
-            Color(0xFF080B10),
-          ],
-        ),
-        border: Border.all(
-          color: color,
-          width: 5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(.45),
-            blurRadius: 15,
-          ),
-        ],
-      ),
-      child: Center(
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black,
-            border: Border.all(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
               color: Colors.white54,
             ),
           ),
-          child: const Center(
-            child: Text(
-              'DJ',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
+        ],
+      ),
+    );
+  }
+}class NeuralMixPanel extends StatelessWidget {
+  final bool enabled;
+  final Map<String, double> stems;
+  final ValueChanged<bool> onEnabledChanged;
+  final void Function(String, double) onStemChanged;
+
+  const NeuralMixPanel({
+    super.key,
+    required this.enabled,
+    required this.stems,
+    required this.onEnabledChanged,
+    required this.onStemChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DJCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.auto_awesome,
+                color: Color(0xFF5FE3FF),
               ),
+              const SizedBox(width: 8),
+              const Text(
+                'NEURAL MIX',
+                style: TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Switch(
+                value: enabled,
+                onChanged: onEnabledChanged,
+                activeThumbColor: const Color(0xFF5FE3FF),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          const Text(
+            'STEM CONTROL',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1,
             ),
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _knob(Color color) {
-    return Container(
-      width: 27,
-      height: 27,
-      margin: const EdgeInsets.symmetric(vertical: 1),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFF151C27),
-        border: Border.all(
-          color: color,
-          width: 2,
-        ),
-      ),
-      child: const Center(
-        child: Icon(
-          Icons.circle,
-          size: 4,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
+          const SizedBox(height: 10),
 
-  Widget _roundButton(String text, Color color) {
-    return Container(
-      width: 45,
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: color),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 7,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  Widget _smallButton(
-    String text,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 25,
-        margin: const EdgeInsets.only(left: 4),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.04),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: color),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 8,
-            color: color,
-            fontWeight: FontWeight.bold,
+          ...stems.entries.map(
+            (entry) {
+              return Row(
+                children: [
+                  SizedBox(
+                    width: 105,
+                    child: Text(
+                      entry.key,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: entry.value,
+                      min: 0,
+                      max: 1,
+                      onChanged: enabled
+                          ? (value) {
+                              onStemChanged(entry.key, value);
+                            }
+                          : null,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 38,
+                    child: Text(
+                      '${(entry.value * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-        ),
+        ],
       ),
     );
-  }
+  }class DJButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+  final bool active;
 
-  Widget _tiny(String text) {
-    return Expanded(
-      child: Container(
-        height: 21,
-        margin: const EdgeInsets.all(1),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFF111C2D),
-          borderRadius: BorderRadius.circular(3),
-          border: Border.all(
-            color: Colors.white24,
-          ),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 7),
-        ),
-      ),
-    );
-  }
+  const DJButton({
+    super.key,
+    required this.text,
+    required this.onTap,
+    this.active = false,
+  });
 
-  Widget _action(
-    String text,
-    Color color,
-    VoidCallback onTap,
-  ) {
+  @override
+  Widget build(BuildContext context) {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          height: 27,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          alignment: Alignment.center,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 42,
           decoration: BoxDecoration(
-            color: color.withOpacity(.08),
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: color),
+            color: active
+                ? const Color(0xFF5FE3FF)
+                : const Color(0xFF181E26),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active
+                  ? const Color(0xFF5FE3FF)
+                  : const Color(0xFF343C47),
+            ),
           ),
+          alignment: Alignment.center,
           child: Text(
             text,
             style: TextStyle(
-              color: color,
-              fontSize: 8,
+              color: active ? Colors.black : Colors.white,
               fontWeight: FontWeight.bold,
+              fontSize: 11,
             ),
           ),
         ),
@@ -1197,57 +779,78 @@ class _DJConsoleState extends State<DJConsole> {
   }
 }
 
-class WavePainter extends CustomPainter {
-  final Color color;
-  final double progress;
+class BottomTools extends StatelessWidget {
+  const BottomTools({super.key});
 
-  WavePainter({
-    required this.color,
-    required this.progress,
+  @override
+  Widget build(BuildContext context) {
+    final tools = [
+      Icons.graphic_eq,
+      Icons.grid_view,
+      Icons.queue_music,
+      Icons.playlist_play,
+      Icons.fiber_manual_record,
+    ];
+
+    final names = [
+      'FX',
+      'SAMPLER',
+      'PLAYLIST',
+      'QUEUE',
+      'RECORD',
+    ];
+
+    return DJCard(
+      child: Wrap(
+        alignment: WrapAlignment.spaceEvenly,
+        spacing: 10,
+        runSpacing: 10,
+        children: List.generate(
+          tools.length,
+          (index) {
+            return SizedBox(
+              width: 115,
+              child: OutlinedButton.icon(
+                onPressed: () {},
+                icon: Icon(
+                  tools[index],
+                  size: 18,
+                ),
+                label: Text(
+                  names[index],
+                  style: const TextStyle(fontSize: 10),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class DJCard extends StatelessWidget {
+  final Widget child;
+
+  const DJCard({
+    super.key,
+    required this.child,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.4
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-
-    for (double x = 0; x <= size.width; x += 3) {
-      final p = x / size.width;
-      final y = size.height / 2 +
-          sin(p * pi * 28) *
-              (5 + 9 * sin(p * pi * 10).abs());
-
-      if (x == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-
-    canvas.drawPath(path, paint);
-
-    final px = size.width * progress.clamp(0.0, 1.0);
-
-    final line = Paint()
-      ..color = Colors.redAccent
-      ..strokeWidth = 2;
-
-    canvas.drawLine(
-      Offset(px, 0),
-      Offset(px, size.height),
-      line,
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10141A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF292F39),
+        ),
+      ),
+      child: child,
     );
   }
-
-  @override
-  bool shouldRepaint(
-    covariant WavePainter oldDelegate,
-  ) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.color != color;
-  }
+}
 }
